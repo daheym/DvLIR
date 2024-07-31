@@ -17,6 +17,7 @@ test_datasets = [{'name':'dataset1', 'size':42, 'type': '.csv', 'datapath': 'www
 
 #no better solution than storing in global variable
 file_format = 'xlsx'
+_version = '1.0.5'
 
 ### layout
 app_ui = ui.page_fluid(
@@ -48,7 +49,7 @@ app_ui = ui.page_fluid(
       
       ui.h4('Plot settings'),
       ui.input_checkbox_group(
-        'selectverbraucheinspeisung', 'Select traces to plot',
+        'selectconsumptionfeed', 'Select traces to plot',
         ['Power consumption (kWh)', 'Power feed (kWh)'], selected=['Power consumption (kWh)', 'Power feed (kWh)']),
       ui.input_checkbox_group(
         'selectdaynight', 'Select timeperiods to plot',
@@ -70,6 +71,9 @@ app_ui = ui.page_fluid(
       ui.input_radio_buttons(
         'outputtable', 'Select data to export', {'calc': 'Analyzed', 'raw': 'Raw (combined)'}, selected='calc'),
       
+      ui.hr(),
+      ui.help_text(f'version: {_version}'),
+      
       #parameters for sidebar
       open='always',
       width='300px'
@@ -79,7 +83,7 @@ app_ui = ui.page_fluid(
       ui.h4('Overview'),
       ui.layout_column_wrap(
         ui.value_box('Total energy consumption', value=ui.output_ui('totalkWhconsum'), showcase=icon('plug', 'solid')),
-        ui.value_box('Total energy production', value=ui.output_ui('totalkWhprod'), showcase=icon('plug-circle-bolt', 'solid')),
+        ui.value_box('Total energy production', value=ui.output_ui('totalkWhprod'), showcase=icon('solar-panel', 'solid')), #plug-circle-bolt
         ui.value_box('Peak energy consumption', value=ui.output_ui('maxkWhconsum'), showcase=icon('power-off', 'solid')),
         ui.value_box('Peak energy production', value=ui.output_ui('maxkWhprod'), showcase=icon('bolt', 'solid'))
       ),
@@ -231,21 +235,21 @@ def server(input, output, session):
     _daytime = input.dayrange()
     _daterange = input.daterange()
 
-    verbrauch = df[['1.8.0[kWh]','2.8.0[kWh]']]
-    verbrauch = verbrauch.resample('1h').min()
-    verbrauch["group"] = verbrauch.index.hour.isin(list(_daytime)).cumsum()
+    df_calc = df[['1.8.0[kWh]','2.8.0[kWh]']]
+    df_calc = df_calc.resample('1h').min()
+    df_calc["group"] = df_calc.index.hour.isin(list(_daytime)).cumsum()
 
-    verbrauch = verbrauch.reset_index().groupby("group").agg({"DateTime":"min","1.8.0[kWh]":"min", "2.8.0[kWh]":"min"})
-    verbrauch[["1.8.0[kWh]","2.8.0[kWh]"]] = verbrauch[["1.8.0[kWh]","2.8.0[kWh]"]].diff()
-    verbrauch = verbrauch.set_index('DateTime')
+    df_calc = df_calc.reset_index().groupby("group").agg({"DateTime":"min","1.8.0[kWh]":"min", "2.8.0[kWh]":"min"})
+    df_calc[["1.8.0[kWh]","2.8.0[kWh]"]] = df_calc[["1.8.0[kWh]","2.8.0[kWh]"]].diff()
+    df_calc = df_calc.set_index('DateTime')
 
-    verbrauch.columns = ['Power consumption (kWh)', 'Power feed (kWh)']
-    verbrauch['Difference (kWh)'] = verbrauch['Power consumption (kWh)'] - verbrauch['Power feed (kWh)']
+    df_calc.columns = ['Power consumption (kWh)', 'Power feed (kWh)']
+    df_calc['Difference (kWh)'] = df_calc['Power consumption (kWh)'] - df_calc['Power feed (kWh)']
 
-    verbrauch = verbrauch.loc[_daterange[0]:_daterange[1], :]
+    df_calc = df_calc.loc[_daterange[0]:_daterange[1], :]
     
-    calculated_data.set(verbrauch)
-    return render.DataGrid(verbrauch.reset_index(), width='100%', height='150px', summary=False)
+    calculated_data.set(df_calc)
+    return render.DataGrid(df_calc.reset_index(), width='100%', height='150px', summary=False)
 
   
   #function to plot the dataframe
@@ -256,7 +260,7 @@ def server(input, output, session):
 
     #data import
     df = calculated_data.get()
-    _curves = input.selectverbraucheinspeisung()
+    _curves = input.selectconsumptionfeed()
     _appearance = input.selectmarkerslines()
     _daynight = input.selectdaynight()
     _dayrange = input.dayrange()
@@ -268,6 +272,8 @@ def server(input, output, session):
         df = df.at_time(f'{_day}:00:00')
       elif 'Night' in _daynight:
         df = df.at_time(f'{_night}:00:00')
+      else:
+        df = pd.DataFrame(columns=['Power consumption (kWh)', 'Power feed (kWh)'])
     
     #plot formatting
     fmt = dict()
