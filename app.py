@@ -1,4 +1,5 @@
 import io
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -17,7 +18,7 @@ test_datasets = [{'name':'dataset1', 'size':42, 'type': '.csv', 'datapath': 'www
 
 #no better solution than storing in global variable
 file_format = 'xlsx'
-_version = '1.0.5'
+_version = '1.1'
 
 ### layout
 app_ui = ui.page_fluid(
@@ -26,6 +27,7 @@ app_ui = ui.page_fluid(
   ui.hr(),
   ui.page_sidebar(
     ui.sidebar(
+      
       #Sidebar
       ui.h4('Input parameters'),
       ui.input_file(
@@ -63,15 +65,16 @@ app_ui = ui.page_fluid(
       ui.hr(),
 
       ui.h4('Download settings'),
-      # ui.input_switch(
-      #   'separate_data', 'Separate tables for Day/Night values (applies only to analyzed data)', False),
+      ui.input_switch(
+        'separate_data', 'Separate tables for Day/Night values', False),
+      ui.help_text('Note: CSV-files always contain the whole dataset and cannot be splitted into Day/Night tabs. Only valid for analyzed dataset.'),
       ui.input_radio_buttons(
-        'outputformat', 'Select output format', {'csv':'CSV'}, selected='csv'),
-      # ui.help_text('Note: CSV-files always contain the whole dataset and cannot be splitted into Day/Night tabs.'),
+        'outputformat', 'Select output format', {'xlsx': 'Excel', 'csv':'CSV'}, selected='csv'),
       ui.input_radio_buttons(
         'outputtable', 'Select data to export', {'calc': 'Analyzed', 'raw': 'Raw (combined)'}, selected='calc'),
       
       ui.hr(),
+      ui.markdown(f'{icon('github')} [GitHub](https://github.com/daheym/DvLIR)'),
       ui.help_text(f'version: {_version}'),
       
       #parameters for sidebar
@@ -239,7 +242,7 @@ def server(input, output, session):
     df_calc = df_calc.resample('1h').min()
     df_calc["group"] = df_calc.index.hour.isin(list(_daytime)).cumsum()
 
-    df_calc = df_calc.reset_index().groupby("group").agg({"DateTime":"min","1.8.0[kWh]":"min", "2.8.0[kWh]":"min"})
+    df_calc = df_calc.reset_index().groupby("group").agg({"DateTime":"min", "1.8.0[kWh]":"min", "2.8.0[kWh]":"min"})
     df_calc[["1.8.0[kWh]","2.8.0[kWh]"]] = df_calc[["1.8.0[kWh]","2.8.0[kWh]"]].diff()
     df_calc = df_calc.set_index('DateTime')
 
@@ -292,41 +295,75 @@ def server(input, output, session):
   
 
   #helper function to provide output file format ending in decorator
+  #if set to csv, toggle switch to off
   @reactive.effect
   @reactive.event(input.outputformat)
   def fileending():
     global file_format
     file_format = input.outputformat()
+    if file_format == 'csv':
+      ui.update_switch('separate_data', value=False)
 
   
   #helper function to provide Excel as tempfile
   def create_excel_file(df):
+
+    _split = input.separate_data()
+    _daytime = input.dayrange()
+
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temp_file:
       workbook = Workbook()
       sheet = workbook.active
+      sheet.title = 'data'
 
-      for row in dataframe_to_rows(df, index=True, header=True):
-        sheet.append(row)
+      if not _split:
+        for row in dataframe_to_rows(df, index=True, header=True):
+          sheet.append(row)
 
+      else:
+        for _time,_period in zip(_daytime, ['Night', 'Day']):
+          _sheet = f'{_period}_{_time:02}'
+          workbook.create_sheet(_sheet)
+          sheet = workbook[_sheet]
+
+          dfx = df.reset_index()
+          dfx = dfx[dfx['DateTime'].dt.time.apply(lambda x: x.strftime("%H:%M:%S")).eq(f'{_time:02}:00:00')]
+          # dfx = dfx.set_index('DateTime') #wrong DateTime, likely due to Unix time format
+          dfx['DateTime'] = dfx['DateTime'].astype(str)
+
+          for row in dataframe_to_rows(
+            dfx, 
+            # df.reset_index()[df.reset_index()['DateTime'].dt.time.apply(lambda x: x.strftime("%H:%M:%S")).eq(f'{_time:02}:00:00')],
+            index=True, header=True
+          ):
+            sheet.append(row)
+        
+        del workbook['data']
+          
       workbook.save(temp_file.name)
       return temp_file.name
    
-  
+  #ToDo: put filename construction into function, include table name (raw/calc)
   #function to download the results table
-  @render.download(filename=f'{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_DvLIR-data.csv')
+  @render.download(filename=lambda: f'{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_DvLIR-data.{file_format}')
   def download_table():
 
-    # _format = input.outputformat()
+    _format = input.outputformat()
     _table = input.outputtable()
     
+    #get data table
     if _table == 'calc':
       df = calculated_data.get()
-      
-      # if not input.separate_data():
-        # if _format == 'xlsx':
-        #   file = create_excel_file(df)
-        #   yield file
-        # elif _format == 'csv':
+    elif _table == 'raw':
+      df = original_data.get()
+    
+    #respond to output format
+    if _format == 'xlsx':
+      file = create_excel_file(df)
+      print(file)
+      return file
+    
+    elif _format == 'csv':
       yield df.to_csv()
       
       # else:
@@ -337,19 +374,12 @@ def server(input, output, session):
       #         df.reset_index()[df.reset_index()['DateTime'].dt.time.apply(lambda x: x.strftime("%H:%M:%S")).eq(f'{_time}:00:00')].to_excel(writer, sheet_name=f'{_period}')
       #       yield buf.getvalue()
 
-    elif _table == 'raw':
-      df = original_data.get()
-      
-      # if _format == 'xlsx':
-      #   pass
-      # elif _format == 'csv':
-      yield df.to_csv()
-
 
   #function to download the plot
   @render.download(filename=f'{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_DvLIR-plot.png')
   def download_plot():
     fig = plotted_data.get()
+    
     with io.BytesIO() as buf:
       fig.savefig(buf, format='png', dpi=600, bbox_inches='tight')
       yield buf.getvalue()
