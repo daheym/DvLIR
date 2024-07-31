@@ -144,14 +144,22 @@ def server(input, output, session):
   
   @render.ui
   def maxkWhconsum() -> str:
-    df = calculated_data.get()
-    _total = df['Power consumption (kWh)'].max()
+    df = original_data.get()
+    daily_totals = df['1.8.0[kWh]'].resample('D').last()
+    daily_increment = daily_totals.diff().reset_index()
+    _total = daily_increment['1.8.0[kWh]'].max()
+    # df = calculated_data.get()
+    # _total = df['Power consumption (kWh)'].max()
     return f'{_total:.3g} kWh'
 
   @render.ui
   def maxkWhprod() -> str:
-    df = calculated_data.get()
-    _total = df['Power feed (kWh)'].max()
+    df = original_data.get()
+    daily_totals = df['2.8.0[kWh]'].resample('D').last()
+    daily_increment = daily_totals.diff().reset_index()
+    _total = daily_increment['2.8.0[kWh]'].max()
+    # df = calculated_data.get()
+    # _total = df['Power feed (kWh)'].max()
     return f'{_total:.3g} kWh'
   
 
