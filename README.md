@@ -5,9 +5,9 @@ Python based Shiny application for the analysis of Smart Meter data (DvLIR). For
 
 ### How to use
 - Upload one or multiple .csv files that are exported from the DvLIR device
-- The data is automatically concatenated, sorted ny date and duplicates are removed
+- The data are automatically concatenated, sorted by date and duplicates are removed
 - Select the *date range* of interest and use the *daytime* slider to determine which hours is considered as Day in the analysis
-- A click on the **Run analysis** button analyzes the data according to your settings and plots the timecurves
+- A click on the **Run analysis** starts data analysis according to your settings and plots the timecurve(s)
 - Customize the plot and export the plot and/or the data
 
 ### Note
@@ -16,7 +16,7 @@ If you want to process a lot of data and/or use the app frequently, please consi
 ### Requirements
 - Python 3.12
 - pandas, matplotlib
-- openpyxl
+- xlsxwriter
 - shiny, shinyswatch
 - faicons
 

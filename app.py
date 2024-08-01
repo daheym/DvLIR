@@ -69,7 +69,7 @@ app_ui = ui.page_fluid(
         'separate_data', 'Separate tables for Day/Night values', False),
       ui.help_text('Note: CSV-files always contain the whole dataset and cannot be splitted into Day/Night tabs. Only valid for analyzed dataset.'),
       ui.input_radio_buttons(
-        'outputformat', 'Select output format', {'xlsx': 'Excel', 'csv':'CSV'}, selected='csv'),
+        'outputformat', 'Select output format', {'xlsx': 'Excel', 'csv':'CSV'}, selected='xlsx'),
       ui.input_radio_buttons(
         'outputtable', 'Select data to export', {'calc': 'Analyzed', 'raw': 'Raw (combined)'}, selected='calc'),
       
@@ -305,7 +305,37 @@ def server(input, output, session):
       ui.update_switch('separate_data', value=False)
 
   
+  #helper function to change output format to Excel when toggle is activated
+  # @reactive.event
+  # @reactive.effect(input.separate_data)
+  # def setoutputtoexcel():
+  #   if input.separate_data():
+  #     ui.update_radio_buttons('outputformat', selected=True)
+
+  #helper function to yield Excel
+  def create_multi_sheet_excel_file(df):
+    
+    # _split = input.separate_data()
+    _daytime = input.dayrange()
+  
+    with io.BytesIO() as buf:  
+      with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
+        for _time,_period in zip(_daytime, ['Night', 'Day']):
+
+          _sheet = f'{_period}_{_time:02}'
+
+          dfx = df.reset_index()
+          dfx = dfx[dfx['DateTime'].dt.time.apply(lambda x: x.strftime("%H:%M:%S")).eq(f'{_time:02}:00:00')]
+          dfx['DateTime'] = dfx['DateTime'].astype(str)
+
+          dfx.to_excel(writer, index=False, sheet_name=_sheet)
+
+      buf.seek(0)
+      return buf.getvalue()
+
+  
   #helper function to provide Excel as tempfile
+  #Note: not working
   def create_excel_file(df):
 
     _split = input.separate_data()
@@ -333,7 +363,6 @@ def server(input, output, session):
 
           for row in dataframe_to_rows(
             dfx, 
-            # df.reset_index()[df.reset_index()['DateTime'].dt.time.apply(lambda x: x.strftime("%H:%M:%S")).eq(f'{_time:02}:00:00')],
             index=True, header=True
           ):
             sheet.append(row)
@@ -343,6 +372,7 @@ def server(input, output, session):
       workbook.save(temp_file.name)
       return temp_file.name
    
+  
   #ToDo: put filename construction into function, include table name (raw/calc)
   #function to download the results table
   @render.download(filename=lambda: f'{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_DvLIR-data.{file_format}')
@@ -357,11 +387,21 @@ def server(input, output, session):
     elif _table == 'raw':
       df = original_data.get()
     
+    _split = input.separate_data()
+    
     #respond to output format
     if _format == 'xlsx':
-      file = create_excel_file(df)
-      print(file)
-      return file
+      if not _split:
+        with io.BytesIO() as buf:
+          df.to_excel(buf, sheet_name='data')
+          yield buf.getvalue()
+
+      else:
+        yield create_multi_sheet_excel_file(df)
+
+      # file = create_excel_file(df)
+      # print(file)
+      # return str(file)
     
     elif _format == 'csv':
       yield df.to_csv()
