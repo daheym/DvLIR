@@ -16,7 +16,7 @@ If you want to process a lot of data and/or use the app frequently, please consi
 ### Requirements
 - Python 3.12
 - pandas, matplotlib
-- xlsxwriter
+- openpyxl
 - shiny, shinyswatch
 - faicons
 

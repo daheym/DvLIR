@@ -1,6 +1,4 @@
 import io
-from tkinter import N, NO
-from turtle import st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -27,7 +25,7 @@ _ymaxrange = (None, None)
 ### layout
 app_ui = ui.page_fluid(
   ui.hr(),
-  ui.panel_title('Analyze DvDIR datasets'),
+  ui.panel_title('Analyze DvDIR datasets', 'DvLIR analyzer'),
   ui.hr(),
   ui.page_sidebar(
     ui.sidebar(
@@ -42,7 +40,8 @@ app_ui = ui.page_fluid(
           'parsefiles', 'Import', icon=icon('file-import', 'solid')),
         ui.input_action_button(
           'addfiles', 'Add Files', icon=icon('square-plus', 'solid')),
-        width=.5),
+        width=.5
+      ),
       
       ui.hr(),
       
@@ -57,7 +56,8 @@ app_ui = ui.page_fluid(
           'start_analysis', 'Analyze', icon=icon('magnifying-glass-chart', 'solid')),
         ui.input_action_button(
           'reset_analysis', 'Reset', icon=icon('arrow-rotate-left', 'solid')),
-        width=.5),
+        width=.5
+      ),
 
       ui.hr(),
       
@@ -78,7 +78,8 @@ app_ui = ui.page_fluid(
         'plot_data', 'Plot', icon=icon('chart-line', 'solid')),
         ui.input_action_button(
         'reset_plot', 'Reset', icon=icon('arrow-rotate-left', 'solid')),
-        width=.5),
+        width=.5
+      ),
 
       ui.hr(),
 
