@@ -13,7 +13,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 import tempfile
 
 #version string
-_version = '1.2.5'
+_version = '1.3.0'
 
 #datasets for testing, stored in www/example_data
 #is loaded when Import button is pressed without specifying input files
@@ -37,8 +37,12 @@ app_ui = ui.page_fluid(
       ui.input_file(
         'files', 'Select file(s) to upload', multiple=True, accept='.csv', placeholder='no file selected', button_label='Browse'),
       ui.output_data_frame('showselectedfiles'),
-      ui.input_action_button(
-        'parsefiles', 'Repeat import', disabled=False),
+      ui.layout_column_wrap(
+        ui.input_action_button(
+          'parsefiles', 'Import', icon=icon('file-import', 'solid')),
+        ui.input_action_button(
+          'addfiles', 'Add Files', icon=icon('square-plus', 'solid')),
+        width=.5),
       
       ui.hr(),
       
@@ -48,8 +52,12 @@ app_ui = ui.page_fluid(
       ui.input_slider(
         'dayrange', 'Select daytime', min=0, max=24, value=[8, 17]),
       # ui.markdown('**Note:** The selected range will be treated as daytime and summarized for the concluding time.'),
-      ui.input_action_button(
-        'start_analysis', 'Run analysis', disabled=False),
+      ui.layout_column_wrap(
+        ui.input_action_button(
+          'start_analysis', 'Analyze', icon=icon('magnifying-glass-chart', 'solid')),
+        ui.input_action_button(
+          'reset_analysis', 'Reset', icon=icon('arrow-rotate-left', 'solid')),
+        width=.5),
 
       ui.hr(),
       
@@ -67,9 +75,9 @@ app_ui = ui.page_fluid(
       ui.input_slider('plotyrange', 'Optional: Adjust kWh-axis range', min=0, max=10, value=(None,None), step=.25),
       ui.layout_column_wrap(
         ui.input_action_button(
-        'plot_data', 'Plot', disabled=False, icon=icon('chart-line', 'solid')),
+        'plot_data', 'Plot', icon=icon('chart-line', 'solid')),
         ui.input_action_button(
-        'reset_plot', 'Reset', disabled=False, icon=icon('arrow-rotate-left', 'solid')),
+        'reset_plot', 'Reset', icon=icon('arrow-rotate-left', 'solid')),
         width=.5),
 
       ui.hr(),
@@ -138,6 +146,7 @@ def server(input, output, session):
   # plot_yrange = reactive.Value()
 
   outfile_data_name = reactive.Value()
+  # outfile_icon = reactive.Value(icon('file-excel', 'solid'))
 
   ## function definitions
 
@@ -389,6 +398,16 @@ def server(input, output, session):
     if input.separate_data():
       ui.update_radio_buttons('outputformat', selected='xlsx')
       ui.update_radio_buttons('outputtable', selected='calc')
+
+  
+  #helper function to change download button icon
+  #Note: not supported yet... maybe in future?!
+  # @reactive.effect()
+  # def setoutputicon():
+  #   if input.outputformat() == 'xlsx':
+  #     ui.update_download_button('download_table', icon=icon('file-excel', 'solid'))
+  #   elif input.outputformat() == 'csv':
+  #     ui.update_download_button('download_table', icon=icon('file-csv', 'solid'))
 
   
   #helper function to yield multi-sheet Excel file
