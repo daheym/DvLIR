@@ -232,7 +232,7 @@ def server(input, output, session):
     df.dropna(thresh=2, inplace=True)
     
     #remove data from 1st Jan 1970 (appear when device is switched on; likely Unix time error)
-    _drop1970 = df[df.index < pd.to_datetime('1970-01-02')].index
+    _drop1970 = df[df.index < pd.to_datetime('1970-01-30')].index
     df = df.drop(_drop1970)
 
     #convert data to floats
