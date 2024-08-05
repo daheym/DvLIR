@@ -1,5 +1,6 @@
 import io
-import os
+from tkinter import N, NO
+from turtle import st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -11,14 +12,17 @@ from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 import tempfile
 
-#for testing
-#remove together with parsefiles button!
+#version string
+_version = '1.2.5'
+
+#datasets for testing, stored in www/example_data
+#is loaded when Import button is pressed without specifying input files
 test_datasets = [{'name':'dataset1', 'size':42, 'type': '.csv', 'datapath': 'www/example_data/dataset1.csv'},
                  {'name':'dataset2', 'size':42, 'type': '.csv', 'datapath': 'www/example_data/dataset2.csv'}]
 
-#no better solution than storing in global variable
-file_format = 'xlsx'
-_version = '1.1'
+#no better solution than storing in global variables
+_execution = False
+_ymaxrange = (None, None)
 
 ### layout
 app_ui = ui.page_fluid(
@@ -31,7 +35,7 @@ app_ui = ui.page_fluid(
       #Sidebar
       ui.h4('Input parameters'),
       ui.input_file(
-        'files', 'Select file(s) to upload', multiple=True, accept='.csv', placeholder='no file selected', button_label='Choose'),
+        'files', 'Select file(s) to upload', multiple=True, accept='.csv', placeholder='no file selected', button_label='Browse'),
       ui.output_data_frame('showselectedfiles'),
       ui.input_action_button(
         'parsefiles', 'Repeat import', disabled=False),
@@ -56,22 +60,28 @@ app_ui = ui.page_fluid(
       ui.input_checkbox_group(
         'selectdaynight', 'Select timeperiods to plot',
         ['Day', 'Night'], selected=['Day', 'Night']),
+      # ui.HTML('<hr style="border-style: dotted;" />'),
       ui.input_radio_buttons(
         'selectmarkerslines', 'Show plot as markers/lines',
-        ['Markers', 'Lines'], selected=['Lines']),
-      ui.input_action_button(
-        'plot_data', 'Update plot', disabled=False),
+        ['Markers', 'Lines'], selected='Lines'),
+      ui.input_slider('plotyrange', 'Optional: Adjust kWh-axis range', min=0, max=10, value=(None,None), step=.25),
+      ui.layout_column_wrap(
+        ui.input_action_button(
+        'plot_data', 'Plot', disabled=False, icon=icon('chart-line', 'solid')),
+        ui.input_action_button(
+        'reset_plot', 'Reset', disabled=False, icon=icon('arrow-rotate-left', 'solid')),
+        width=.5),
 
       ui.hr(),
 
       ui.h4('Download settings'),
       ui.input_switch(
         'separate_data', 'Separate tables for Day/Night values', False),
-      ui.help_text('Note: CSV-files always contain the whole dataset and cannot be splitted into Day/Night tabs. Only valid for analyzed dataset.'),
+      ui.help_text('Note: CSV-files always contain the whole dataset and cannot be splitted into Day/Night tabs. Only applicable for analyzed dataset.'),
       ui.input_radio_buttons(
         'outputformat', 'Select output format', {'xlsx': 'Excel', 'csv':'CSV'}, selected='xlsx'),
       ui.input_radio_buttons(
-        'outputtable', 'Select data to export', {'calc': 'Analyzed', 'raw': 'Raw (combined)'}, selected='calc'),
+        'outputtable', 'Select data to export', {'calc': 'Analyzed', 'raw': 'Raw (concatenated)'}, selected='calc'),
       
       ui.hr(),
       ui.markdown(f'{icon('github')} [GitHub](https://github.com/daheym/DvLIR)'),
@@ -86,9 +96,9 @@ app_ui = ui.page_fluid(
       ui.h4('Overview'),
       ui.layout_column_wrap(
         ui.value_box('Total energy consumption', value=ui.output_ui('totalkWhconsum'), showcase=icon('plug', 'solid')),
-        ui.value_box('Total energy production', value=ui.output_ui('totalkWhprod'), showcase=icon('solar-panel', 'solid')), #plug-circle-bolt
+        ui.value_box('Total energy feed', value=ui.output_ui('totalkWhprod'), showcase=icon('solar-panel', 'solid')), #plug-circle-bolt
         ui.value_box('Peak energy consumption', value=ui.output_ui('maxkWhconsum'), showcase=icon('power-off', 'solid')),
-        ui.value_box('Peak energy production', value=ui.output_ui('maxkWhprod'), showcase=icon('bolt', 'solid'))
+        ui.value_box('Peak energy feed', value=ui.output_ui('maxkWhprod'), showcase=icon('bolt', 'solid'))
       ),
       ui.h4('Raw data (concatenated)'),
       ui.card(
@@ -125,6 +135,9 @@ def server(input, output, session):
   calculated_data = reactive.Value()
   
   plotted_data = reactive.Value()
+  # plot_yrange = reactive.Value()
+
+  outfile_data_name = reactive.Value()
 
   ## function definitions
 
@@ -182,7 +195,6 @@ def server(input, output, session):
   #and re-format datetime column
   @render.data_frame
   @reactive.event(input.files, input.parsefiles)
-  # @reactive.event(input.files)
   def read_files():
     
     df = pd.DataFrame()
@@ -206,9 +218,10 @@ def server(input, output, session):
     _files = pd.DataFrame({'Files loaded': _names})
     selectedfiles.set(_files)
 
-    #perform calculations
+    #remove duplicate entries
     df = df.drop_duplicates()
     
+    #create DateTime index
     df['DateTime'] = df['Date[UTC]'] + '_' + df['Time[UTC]']
     df['DateTime'] = pd.to_datetime(df['DateTime'], format='%d.%m.%Y_%H:%M:%S')
     
@@ -217,13 +230,22 @@ def server(input, output, session):
     df.sort_index(inplace=True)
     
     df.dropna(thresh=2, inplace=True)
+    
+    #remove data from 1st Jan 1970 (appear when device is switched on; likely Unix time error)
+    _drop1970 = df[df.index < pd.to_datetime('1970-01-02')].index
+    df = df.drop(_drop1970)
 
+    #convert data to floats
     for col in ['1.8.0[kWh]', '2.8.0[kWh]']:
       df[col] = df[col].str.replace(',', '.').astype(float)
 
     #update slider and store df
     update_daterange(df)
     original_data.set(df)
+
+    #update global variable
+    global _execution
+    _execution = False
 
     #return data
     return render.DataGrid(df.reset_index(), width='100%', height='150px', summary=False)
@@ -251,14 +273,36 @@ def server(input, output, session):
 
     df_calc = df_calc.loc[_daterange[0]:_daterange[1], :]
     
+    #no good solution: leads to lines connecting empty time intervals!
+    # df_calc = df_calc.dropna()
+    
     calculated_data.set(df_calc)
-    return render.DataGrid(df_calc.reset_index(), width='100%', height='150px', summary=False)
+    return render.DataGrid(df_calc.dropna().reset_index(), width='100%', height='150px', summary=False)
 
+  
+  #function to reset the plot settings
+  @reactive.effect()
+  @reactive.event(input.reset_plot)
+  def reset_plot_params():
+    ui.update_checkbox_group('selectconsumptionfeed', selected=['Power consumption (kWh)', 'Power feed (kWh)'])
+    ui.update_checkbox_group('selectdaynight', selected=['Day', 'Night'])
+    ui.update_radio_buttons('selectmarkerslines', selected='Lines')
+    
+    #this correct?!
+    ui.update_slider('plotyrange', value=(None,None))
+
+    global _execution
+    _execution = False
+
+  
+  #helper function to update the plotyrange.slider
+  def update_plotyrange(max, value):
+    ui.update_slider('plotyrange', max=max, value=value)
+ 
   
   #function to plot the dataframe
   @render.plot
   @reactive.event(input.plot_data, input.start_analysis)
-  # @reactive.event(input.start_analysis)
   def plot_dataset() -> plt.Figure:
 
     #data import
@@ -286,33 +330,68 @@ def server(input, output, session):
     #plotting
     fig,ax = plt.subplots()
     df[list(_curves)].plot(**fmt, ax=ax)
+
+    #store initial y-axis range settings
+    #and set variable to remember that function has been executed initially
+    global _execution
+    global _ymaxrange
+    if not _execution: 
+      _execution = True
+      _yrange = tuple([round(i, 2) for i in ax.get_ylim()])
+      _ymaxrange = tuple([i if i>0 else 0 for i in _yrange])
+         
+      #why is this not executed right away?!
+      update_plotyrange(max=_yrange[1], value=_ymaxrange)
+      _ylim = (None,None)
     
-    ax.set(xlabel='Date (year-month)', ylabel='Power (kWh)')
+    ##ToDo: update slider upon checkbox changes!
+    
+    #set ylim parameter;
+    #check if slider set onto stored values, then set ylim to (None,None)
+    else:
+      _ylim = input.plotyrange()
+      if _ylim == _ymaxrange:
+        _ylim = (None,None)
+      elif _ylim[0] == 0:
+        _ylim = (None, _ylim[1])
+    
+    #set ax parameters
+    ax.set(xlabel='Date (year-month)', ylabel='Power (kWh)', ylim=_ylim)
     ax.xaxis.set_major_locator(mdates.MonthLocator())
 
-    plotted_data.set(fig)
+    #store and return figure
+    plotted_data.set((fig,ax))
     return fig
   
+  
+  #helper function to update the 'plotyrange' slider after the checkboxes are changed
+  #would require to split the plotting function into plot generation & plot returnal
+  # @reactive.effect
+  # @reactive.event(input.plot_data)
+  # def updateyrange():
+    # pass
+    # _,ax = plotted_data.get()
+    # _yrange = tuple([round(i, 2) for i in ax.get_ylim()])
+    # _ymaxrange = tuple([i if i>0 else 0 for i in _yrange])
+    # update_plotyrange(max=_yrange[1], value=_ymaxrange)
+  
 
-  #helper function to provide output file format ending in decorator
-  #if set to csv, toggle switch to off
+  #helper function to toggle separate switch to off when csv or raw is chosen
   @reactive.effect
-  @reactive.event(input.outputformat)
-  def fileending():
-    global file_format
-    file_format = input.outputformat()
-    if file_format == 'csv':
+  def toggleswitchoff():
+    if input.outputformat() == 'csv' or input.outputtable() == 'raw':
       ui.update_switch('separate_data', value=False)
 
   
-  #helper function to change output format to Excel when toggle is activated
-  # @reactive.event
-  # @reactive.effect(input.separate_data)
-  # def setoutputtoexcel():
-  #   if input.separate_data():
-  #     ui.update_radio_buttons('outputformat', selected=True)
+  #helper function to change output format to Excel when toggle is activatedn & set dataset to calc
+  @reactive.effect()
+  def setoutputtoexcel():
+    if input.separate_data():
+      ui.update_radio_buttons('outputformat', selected='xlsx')
+      ui.update_radio_buttons('outputtable', selected='calc')
 
-  #helper function to yield Excel
+  
+  #helper function to yield multi-sheet Excel file
   def create_multi_sheet_excel_file(df):
     
     # _split = input.separate_data()
@@ -335,7 +414,7 @@ def server(input, output, session):
 
   
   #helper function to provide Excel as tempfile
-  #Note: not working
+  #Note: not working, not used
   def create_excel_file(df):
 
     _split = input.separate_data()
@@ -373,9 +452,17 @@ def server(input, output, session):
       return temp_file.name
    
   
-  #ToDo: put filename construction into function, include table name (raw/calc)
+  #helper function to create the name of the downloaded data table
+  @reactive.effect()
+  def construct_download_filename():
+    _format = input.outputformat()
+    _table = input.outputtable()
+    
+    outfile_data_name.set(f'{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_DvLIR-data_{_table}.{_format}')
+    
+   
   #function to download the results table
-  @render.download(filename=lambda: f'{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_DvLIR-data.{file_format}')
+  @render.download(filename=lambda: outfile_data_name.get())
   def download_table():
 
     _format = input.outputformat()
@@ -395,30 +482,18 @@ def server(input, output, session):
         with io.BytesIO() as buf:
           df.to_excel(buf, sheet_name='data')
           yield buf.getvalue()
-
+      
       else:
         yield create_multi_sheet_excel_file(df)
-
-      # file = create_excel_file(df)
-      # print(file)
-      # return str(file)
-    
+   
     elif _format == 'csv':
       yield df.to_csv()
       
-      # else:
-      #   _daytime = input.dayrange()
-      #   with io.BytesIO() as buf:
-      #     with pd.ExcelWriter(buf) as writer:
-      #       for _time,_period in zip(_daytime, ['Night', 'Day']):
-      #         df.reset_index()[df.reset_index()['DateTime'].dt.time.apply(lambda x: x.strftime("%H:%M:%S")).eq(f'{_time}:00:00')].to_excel(writer, sheet_name=f'{_period}')
-      #       yield buf.getvalue()
-
 
   #function to download the plot
   @render.download(filename=f'{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_DvLIR-plot.png')
   def download_plot():
-    fig = plotted_data.get()
+    fig,ax = plotted_data.get()
     
     with io.BytesIO() as buf:
       fig.savefig(buf, format='png', dpi=600, bbox_inches='tight')
