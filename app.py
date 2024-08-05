@@ -13,7 +13,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 import tempfile
 
 #version string
-_version = '1.3.0'
+_version = '1.3.2'
 
 #datasets for testing, stored in www/example_data
 #is loaded when Import button is pressed without specifying input files
@@ -146,11 +146,10 @@ def server(input, output, session):
   # plot_yrange = reactive.Value()
 
   outfile_data_name = reactive.Value()
-  # outfile_icon = reactive.Value(icon('file-excel', 'solid'))
 
   ## function definitions
 
-  #helper function to update daterange slider:
+  #helper function to update daterange slider
   def update_daterange(df):
     _min = df.index.min()
     _max = df.index.max()
@@ -280,14 +279,24 @@ def server(input, output, session):
     df_calc.columns = ['Power consumption (kWh)', 'Power feed (kWh)']
     df_calc['Difference (kWh)'] = df_calc['Power consumption (kWh)'] - df_calc['Power feed (kWh)']
 
-    df_calc = df_calc.loc[_daterange[0]:_daterange[1], :]
+    #remove to store the full df in reactive Value
+    # df_calc = df_calc.loc[_daterange[0]:_daterange[1], :]
     
     #no good solution: leads to lines connecting empty time intervals!
     # df_calc = df_calc.dropna()
     
     calculated_data.set(df_calc)
-    return render.DataGrid(df_calc.dropna().reset_index(), width='100%', height='150px', summary=False)
+    return render.DataGrid(df_calc.loc[_daterange[0]:_daterange[1], :].dropna().reset_index(), 
+                           width='100%', height='150px', summary=False)
 
+  
+  #function to reset the analysis settings
+  @reactive.effect()
+  @reactive.event(input.reset_analysis)
+  def reset_analysis_params():
+    ui.update_slider('dayrange', value=[8, 17])
+    update_daterange(calculated_data.get())
+  
   
   #function to reset the plot settings
   @reactive.effect()
@@ -315,11 +324,14 @@ def server(input, output, session):
   def plot_dataset() -> plt.Figure:
 
     #data import
-    df = calculated_data.get()
+    _daterange = input.daterange()
     _curves = input.selectconsumptionfeed()
     _appearance = input.selectmarkerslines()
     _daynight = input.selectdaynight()
     _dayrange = input.dayrange()
+
+    df = calculated_data.get()
+    df = df.loc[_daterange[0]:_daterange[1], :]
 
     #select day/night datapoints
     _night,_day = _dayrange
