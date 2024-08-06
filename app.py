@@ -11,7 +11,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 import tempfile
 
 #version string
-_version = '1.3.2'
+_version = '1.3.3'
 
 #datasets for testing, stored in www/example_data
 #is loaded when Import button is pressed without specifying input files
@@ -33,14 +33,16 @@ app_ui = ui.page_fluid(
       #Sidebar
       ui.h4('Input parameters'),
       ui.input_file(
-        'files', 'Select file(s) to upload', multiple=True, accept='.csv', placeholder='no file selected', button_label='Browse'),
+        'files', 'Select file(s) to upload', multiple=True, accept='.csv', placeholder='no file selected', button_label='Browse...'),
       ui.output_data_frame('showselectedfiles'),
       ui.layout_column_wrap(
         ui.input_action_button(
           'parsefiles', 'Import', icon=icon('file-import', 'solid')),
-        ui.input_action_button(
-          'addfiles', 'Add Files', icon=icon('square-plus', 'solid')),
-        width=.5
+        # ui.input_file(
+        #   'addfiles', '', multiple=True, accept='.csv', placeholder='', button_label=ui.markdown(f"{icon('square-plus', 'solid')} Add Files"), width='100%'),
+        # ui.input_action_button(
+        #   'addfiles', 'Add Files', icon=icon('square-plus', 'solid')),
+        width=1
       ),
       
       ui.hr(),
