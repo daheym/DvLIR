@@ -25,7 +25,7 @@ _ymaxrange = (None, None)
 ### layout
 app_ui = ui.page_fluid(
   ui.hr(),
-  ui.panel_title('Analyze DvDIR datasets', 'DvLIR analyzer'),
+  ui.panel_title('Analyze DvLIR datasets', 'DvLIR analyzer'),
   ui.hr(),
   ui.page_sidebar(
     ui.sidebar(
